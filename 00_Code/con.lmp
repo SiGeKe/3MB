@@ -1,0 +1,107 @@
+# === Simulation Runs for the PEL Analysis ===
+
+# This Script Runs the Simulation for the PEL Analysis.
+# ==========
+# idx: Index of the System
+# seed: Random Seed (need to be consistent for restarting simulations)
+# ----------
+# tempval: Simulation's Temperature
+# nr_steps: Number of Simulation Steps
+# num: Number of Steps for the Restart-File
+# do_restart: Wether restarts are written at the End of the Simulation
+# do_dump: Wether the final Structure is dumped to the Trajectory
+
+# === 1. Initialization ===
+
+variable idx index 0
+variable seed equal 12345+${idx}
+variable num index 0
+variable do_restart index 0
+variable do_dump index 0
+
+log none
+
+# --- 1.1 System's Definition ---
+
+units lj
+atom_style atomic
+dimension 3
+boundary p p p
+pair_style lj/cutpsm 1.25
+
+# --- 1.2 Parameter's Definition ---
+
+read_restart ./04_Restart/${idx}_${num}.restart
+
+pair_coeff 1 1 1 0.7300000000000000 0.9125000000000000
+pair_coeff 2 2 1 0.8288888888888890 1.0361111111111112
+pair_coeff 3 3 1 0.9277777777777780 1.1597222222222225
+pair_coeff 4 4 1 1.0266666666666671 1.2833333333333339
+pair_coeff 5 5 1 1.1255555555555561 1.4069444444444450
+pair_coeff 6 6 1 1.2244444444444440 1.5305555555555550
+pair_coeff 7 7 1 1.3233333333333330 1.6541666666666663
+pair_coeff 8 8 1 1.4222222222222221 1.7777777777777777
+pair_coeff 9 9 1 1.5211111111111111 1.9013888888888888
+pair_coeff 10 10 1 1.6200000000000001 2.0250000000000004
+
+mass 1 1.0
+mass 2 1.0
+mass 3 1.0
+mass 4 1.0
+mass 5 1.0
+mass 6 1.0
+mass 7 1.0
+mass 8 1.0
+mass 9 1.0
+mass 10 1.0
+
+# --- 1.3 Fixes and Simulation's Details ---
+
+fix rmD all momentum 100 linear 1 1 1
+change_box all triclinic
+
+neighbor 0.3 bin
+neigh_modify every 1 delay 0 check yes
+
+fix 1 all nvt temp ${tempval} ${tempval} 0.5
+
+run 0
+
+# === 2. Output's Definition ===
+
+variable track_id equal floor(1+v_nr_steps/100)
+thermo ${track_id}
+thermo_style custom step temp etotal pe ke press
+thermo_modify lost error
+
+variable ISE equal pe
+variable step_id equal v_nr_steps+v_num
+
+# === 3. Run the Simulation ===
+
+timestep 0.01
+run ${nr_steps}
+
+if "${do_restart} != 0" then "write_restart ./04_Restart/${idx}_${nr_steps}.restart"
+
+min_style cg
+min_modify dmax 0.1 line forcezero
+minimize 1.0e-16 1.0e-16 100000 100000
+
+variable postmin equal step
+reset_timestep ${step_id}
+
+compute pe_all all pe/atom
+if "${do_dump} != 0" then & 
+    "dump dumpmin all custom 1 ./03_Traj/${idx}_traj.lammpstrj id type x y z vx vy vz c_pe_all" &
+    "dump_modify dumpmin append yes sort id"
+
+run 0
+print "${step_id} ${ISE}" append ./02_PEL/${idx}_IS.dat screen no
+
+if "${do_dump} != 0" then "undump dumpmin"
+
+reset_timestep ${postmin}
+
+unfix rmD
+unfix 1
