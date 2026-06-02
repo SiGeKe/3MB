@@ -11,6 +11,7 @@
 #SBATCH --nodes=1
 #SBATCH --mail-user s_kell14@uni-muenster.de
 #SBATCH --exclude=kaa-1
+#SBATCH --constraint="znver1|znver2|znver4|haswell|broadwell|cascadelake"
 
 #SBATCH --mail-type FAIL ## slurm will email you when your job fails
 #SBATCH --kill-on-invalid-dep=yes
@@ -31,7 +32,7 @@ do
 	t0=$(date +%s)
     input=./02_PEL/${index}_IS.dat
 
-    uv run MB_Analysis.py --mode IBM --input "${input}" \
+    uv run MB_Analysis.py --mode IBM_Short --input "${input}" \
     | while read -r ti tj; do
 	
 	t1=$(date +%s)
@@ -49,11 +50,11 @@ do
     
 	t3=$(date +%s)
 
-	echo "TIMING ti=$ti tj=$tj | shell=$((t2-t1))s | lammps=$((t3-t2))s" >> ./timing.log
+	echo "TIMING ti=$ti tj=$tj | shell=$((t2-t1))s | lammps=$((t3-t2))s" >> ./timing_${index}.log
 	
 	done
 
 	t4=$(date +%s)
-	echo "TOTAL MB_Analysis + loop: $((t4-t0))" >> ./timing.log
+	echo "TOTAL MB_Analysis + loop: $((t4-t0))" >> ./timing_${index}.log
 
 done

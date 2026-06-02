@@ -11,6 +11,7 @@
 #SBATCH --nodes=1
 #SBATCH --mail-user s_kell14@uni-muenster.de
 #SBATCH --exclude=kaa-1
+#SBATCH --constraint="znver1|znver2|znver4|haswell|broadwell|cascadelake"
 
 #SBATCH --mail-type FAIL ## slurm will email you when your job fails
 #SBATCH --kill-on-invalid-dep=yes
@@ -40,7 +41,7 @@ done | sort -n > ./${index}_restart_list.txt
 for level in $(seq "${l_start}" "${l_end}")
 do
     input=./02_PEL/${index}_IS.dat
-    python MB_Analysis.py --mode IBM --input "${input}" \
+    python MB_Analysis.py --mode IBM_Short --input "${input}" \
     | while read -r ti tj; do
 
         tk=$(awk -v ti="$ti" '$1 <= ti' ${index}_restart_list.txt | tail -1)

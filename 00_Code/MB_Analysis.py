@@ -290,8 +290,11 @@ class Lifetimes:
         tau_data : dict
             Data from calc_tau_vs_temp()
         """
+        from matplotlib.cm import ScalarMappable
+        from matplotlib.colors import Normalize
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
         plt = _setup_plotting()
-        fig = plt.figure(figsize=(3.39,2.0))
+        fig = plt.figure(figsize=(4.5,2.0))
         ax = fig.add_subplot(121)
 
         energies_sorted = sorted(tau_data.keys())
@@ -358,6 +361,17 @@ class Lifetimes:
 
         ax.set_xlabel(r"$T$")
         ax.set_ylabel(r"$\langle \tau (e_{IS},T) \rangle$")
+
+        ax.set_ylabel(r"$\langle \tau (e_{IS},T) \rangle$")
+
+        norm = Normalize(vmin=min(energies_sorted), vmax=max(energies_sorted))
+        sm = ScalarMappable(cmap='viridis', norm=norm)
+        sm.set_array([])
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        cbar = fig.colorbar(sm, cax=cax)
+        cbar.set_label(r"$e_{IS}$")
             
         plt.tight_layout()
         plt.savefig("dist.png")
@@ -506,12 +520,20 @@ class Lifetimes:
         return True
     
     def binned_tau(self,
-                   energies:list):
+                   energies:list=None,
+                   nr_bins:int=100):
         """
-        
+        Calculates the mean Tau within Bins defined by the given Energies.
+
+        Parameters
+        ----------
+        energies : list
+            Energies defining the evaluated Bins.
+        nr_bins : int
+            Number of Bins (only relevant when energies is None.)
         """
         if energies is None:
-            e_eval = np.linspace(min(self.eis),max(self.eis),10)
+            e_eval = np.linspace(min(self.eis),max(self.eis),nr_bins)
         else:
             e_eval = np.array(energies)
         
@@ -563,61 +585,55 @@ class Lifetimes:
         return (self.binned_energies, self.binned_tau_mean, self.binned_tau_std,
                 self.binned_counts) 
     
-    def fit_tau(self):
+    def fit_tau(self, 
+                energies:list=None,
+                nr_bins:int=50):
         """
-        Fits the tau(e_IS) values as an exponential, quadratic function:
-        exp(a+b*e*c*e**2)
+        Fits the mean Values of Tau within given Bins with a polynomial Fit.
+
+        Parameters
+        ----------
+        energies : list
+            Energies defining the evaluated Bins.
+        nr_bins : int
+            Number of Bins (only relevant when energies is None.)
         """
-        from scipy.optimize import curve_fit
-        
-        def exp_quadratic(e,a,b,c):
-            exponent = a+b*e+c*e**2
-            exponent = np.clip(exponent,-100,100)
-            if np.any(np.isinf(np.exp(exponent))):
-                print("WARNING: Overflow in exponential fit!")
-            return np.exp(exponent)
+        self.binned_tau(energies=energies,nr_bins=nr_bins)
+
+        valid_mask = (
+            np.isfinite(self.binned_tau_mean) & 
+            (self.binned_tau_mean > 0) & 
+            (self.binned_counts > 0)
+        )
+        eis_valid = self.binned_energies[valid_mask]
+        tau_valid = self.binned_tau_mean[valid_mask]
+        counts_valid = self.binned_counts[valid_mask]
+        ln_tau_valid = np.log(tau_valid)
+        weights = np.sqrt(counts_valid)
+
+        if len(eis_valid) == 0:
+            print("ERROR: No valid bins for fit_tau.")
+            return None, None
 
         if not hasattr(self, "a_ln_tau"):
             self.fit_ln_tau()
 
-        p0 = [self.a_ln_tau,self.b_ln_tau,self.c_ln_tau]
-
-        dist_array = np.array(self.dist,dtype=float)
-        sigma = np.array(self.tau_mean) / np.sqrt(dist_array)
-
         try:
-            popt, pcov = curve_fit(
-                exp_quadratic,
-                self.eis,
-                self.tau_mean,
-                p0=p0,
-                sigma=sigma,
-                absolute_sigma=False,
-                maxfev=10000000
-            )
-            self.a_tau = popt[0]
-            self.b_tau = popt[1]
-            self.c_tau = popt[2]
-            self.fit_tau_cov = pcov
-
-            return popt, pcov
+            coeffs, cov = np.polyfit(eis_valid, ln_tau_valid, deg=2, w=weights, cov=True)
+            self.c_tau = coeffs[0]
+            self.b_tau = coeffs[1]
+            self.a_tau = coeffs[2]
+            self.fit_tau_cov = cov
+            return coeffs, cov
         except Exception as e:
             print(f"ERROR: Fitting failed with: {type(e).__name__}: {e}")
-            return None,None
+            return None, None
 
     def fit_ln_tau(self):
         """
         Fits the ln[tau(e_IS)] values as an quadratic function:
         a+b*e*c*e**2
         """
-        from scipy.optimize import curve_fit
-        
-        def linear_quadratic(e,a,b,c):
-            return (a+b*e+c*e**2)
-        
-        # Since there are MBs occuring for only one timestep (tau=0.0), 
-        # we need to filter them.
-
         tau_array = np.array(self.tau_mean)
         valid_mask = tau_array > 0
 
@@ -625,26 +641,16 @@ class Lifetimes:
         tau_valid = tau_array[valid_mask]
         dist_valid = np.array(self.dist)[valid_mask]
 
-        p0 = [0.0,1.0,0.0]
-
         ln_tau_mean = np.log(tau_valid)
-        sigma = 1.0 / np.sqrt(dist_valid)
+        weights = np.sqrt(dist_valid)
 
         try:
-            popt, pcov = curve_fit(
-                linear_quadratic,
-                eis_valid,
-                ln_tau_mean,
-                p0=p0,
-                sigma=sigma,
-                absolute_sigma=False,
-                maxfev=50000
-            )
-            self.a_ln_tau = popt[0]
-            self.b_ln_tau = popt[1]
-            self.c_ln_tau = popt[2]
-            self.fit_ln_tau_cov = pcov
-            return popt,pcov
+            coeffs, cov = np.polyfit(eis_valid, ln_tau_mean, deg=2, w=weights, cov=True)
+            self.c_ln_tau = coeffs[0]
+            self.b_ln_tau = coeffs[1]
+            self.a_ln_tau = coeffs[2]
+            self.fit_ln_tau_cov = cov
+            return coeffs, cov
         except Exception as e:
             print(f"ERROR: Fitting failed with: {type(e).__name__}: {e}")
             return None,None  
@@ -747,8 +753,6 @@ class Lifetimes:
         if hasattr(self,"binned_energies"):
             ax.plot(self.binned_energies,self.binned_tau_mean,
                     marker="x",markersize=5,linestyle="None")
-            for i in self.e_eval:
-                ax.vlines(i,min(self.tau_mean),max(self.tau_mean))
 
         ax.set_yscale("log")
         
@@ -801,7 +805,15 @@ class Lifetimes:
                      path:str,
                      energies:list=None) -> None:
         """
-        
+        Writes the mean tau from Simulations
+        for given Energies gained by binning the underlying Data.
+
+        Parameters
+        ----------
+        path : str
+            Path to Output File.
+        energies : list
+            List of Energies to investigate.
         """
         binned_energies,tau_mean,tau_std,counts = self.binned_tau(energies=energies)
         with open(path,"w") as f1:
@@ -809,7 +821,107 @@ class Lifetimes:
             for i,e in enumerate(binned_energies):
                 f1.write(f"{e:.10f} {tau_mean[i]:.10e} {tau_std[i]:.10e} {counts[i]:.10e}\n")
         return
-        
+    
+    @staticmethod
+    def calc_activation_energy(tau_data: dict, mode: str = "Fit") -> dict:
+        """
+        Calculates the apparent activation energy E_a for each energy
+        by fitting ln(tau) vs. 1/T linearly.
+
+        Parameters
+        ==========
+        tau_data : dict
+            Data from calc_tau_vs_temp()
+        mode : str
+            "Fit" or "Bin"
+        """
+        ea_data = {}
+
+        for e, data in tau_data.items():
+            sorted_indices = np.argsort(data["temps"])
+            temps = np.array(data["temps"])[sorted_indices]
+            inv_T = 1.0 / temps
+
+            ea_data[e] = {}
+
+            if mode == "Fit":
+                sources = {
+                    "tau_ln": (data["tau_ln"], data["tau_ln_err"], False),
+                    "tau":    (data["tau"],    data["tau_err"],    True),
+                }
+            elif mode == "Bin":
+                sources = {
+                    "tau": (data["tau"], data["tau_std"], True),
+                }
+
+            for key, (taus_raw, errs_raw, need_log) in sources.items():
+                taus_raw = np.array(taus_raw)[sorted_indices]
+                errs_raw = np.array(errs_raw)[sorted_indices]
+
+                valid = np.isfinite(taus_raw) & (taus_raw > 0) & (temps > 0)
+
+                if np.sum(valid) < 2:
+                    print(f"WARNING: Not enough valid points for e={e:.4f} ({key})")
+                    ea_data[e][key] = {"E_a": np.nan, "E_a_err": np.nan,
+                                       "ln_tau0": np.nan, "ln_tau0_err": np.nan}
+                    continue
+
+                inv_T_valid = inv_T[valid]
+                ln_tau = np.log(taus_raw[valid])
+                sigma = errs_raw[valid] / taus_raw[valid] 
+
+                use_sigma = np.all(np.isfinite(sigma)) and np.all(sigma > 0)
+
+                try:
+                    coeffs, cov = np.polyfit(
+                        inv_T_valid, ln_tau, deg=1,
+                        w=1.0/sigma if use_sigma else None,
+                        cov=True
+                    )
+                    ea_data[e][key] = {
+                        "E_a":        coeffs[0],
+                        "E_a_err":    np.sqrt(cov[0, 0]),
+                        "ln_tau0":    coeffs[1],
+                        "ln_tau0_err": np.sqrt(cov[1, 1])
+                    }
+                except Exception as ex:
+                    print(f"WARNING: Fit failed for e={e:.4f} ({key}): {ex}")
+                    ea_data[e][key] = {"E_a": np.nan, "E_a_err": np.nan,
+                                       "ln_tau0": np.nan, "ln_tau0_err": np.nan}
+
+        return ea_data
+    
+    @staticmethod
+    def plot_activation_energy(ea_data: dict, mode: str = "Fit"):
+        plt = _setup_plotting()
+        fig = plt.figure(figsize=(3.39, 2.0))
+        ax = fig.add_subplot()
+
+        energies = np.array(sorted(ea_data.keys()))
+        keys = ["tau_ln", "tau"] if mode == "Fit" else ["tau"]
+        labels = {"tau_ln": r"$\ln\tau$ fit", "tau": r"$\tau$ fit"}
+
+        for key in keys:
+            E_a     = np.array([ea_data[e][key]["E_a"]     for e in energies])
+            E_a_err = np.array([ea_data[e][key]["E_a_err"] for e in energies])
+            valid = np.isfinite(E_a)
+
+            ax.errorbar(energies[valid], E_a[valid], yerr=E_a_err[valid],
+                        marker="o", markersize=4, linestyle="None",
+                        capsize=3, capthick=1, label=labels[key])
+
+        ax.set_xlabel(r"$e_{IS}$")
+        ax.set_ylabel(r"$E_a(e_{IS})$")
+        ax.xaxis.set_ticks_position('bottom')
+        ax.yaxis.set_ticks_position('left')
+        ax.legend()
+
+        plt.tight_layout()
+        plt.savefig("activation_energy.png")
+        plt.savefig("activation_energy.pdf")
+        plt.show()
+        plt.close()
+
 
 class IBMAnalysis:
     """
@@ -1431,6 +1543,7 @@ def main():
     parser.add_argument("-i","--input",type=str,required=True,help="Path to Input File.")
     parser.add_argument("-m","--mode",type=str,
                         choices=["IBM","MB","Clean","Lifetimes","Fitting","TauT",
+                                 "Test_Expon",
                                  "MB_Plot","Life_Plot","Tau_Plot","TauT_Plot"],required=True)
     # Parameters for the MB Algorithm
     parser.add_argument("-o","--output",type=str,help="Output for the MB Analysis' Results.")
@@ -1501,6 +1614,12 @@ def main():
                                           mode=args.submode)
         Lifetimes.plot_tau_vs_temp(tau_data=data,
                                    mode=args.submode)
+        ea_data = Lifetimes.calc_activation_energy(tau_data=data,mode=args.submode)
+        Lifetimes.plot_activation_energy(ea_data=ea_data)
+        
+    elif args.mode == "Test_Expon":
+        life = Lifetimes.read_file(path=args.input)
+        life.test_exponentiality(energies=args.energies,mode=args.submode)
 
     return
 

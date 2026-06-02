@@ -3,7 +3,7 @@
 name="Test"
 
 index=$1
-nr_steps=40000000
+nr_steps=20000000
 temp=0.1333
 
 block=0 # Remember to change!

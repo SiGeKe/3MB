@@ -24,9 +24,7 @@ source /mnt/cephflash/s_kell14/venv/ibm/bin/activate
 archive="./06_Results/"
 mkdir -p "$archive"
 
-python MB_Analysis.py --input "./02_PEL/*_IS.dat" --mode Lifetimes --output "./06_Results/Lifetimes.dat"
-
 for file in ./02_PEL/*_IS.dat; do
     base=$(basename "$file" _IS.dat)
-    python MB_Analysis.py --input "$file" --mode MB --output "./06_Results/${base}_MB.dat"
+    python MB_Analysis.py --input "$file" --mode MB_Timed --output "./06_Results/${base}_MB.dat"
 done

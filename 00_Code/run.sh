@@ -10,6 +10,7 @@
 #SBATCH --ntasks=1 ## number of tasks (analyses) to run
 #SBATCH --nodes=1
 #SBATCH --mail-user s_kell14@uni-muenster.de
+#SBATCH --constraint="znver1|znver2|znver4|haswell|broadwell|cascadelake"
 
 #SBATCH --mail-type BEGIN  ## slurm will email you when your job starts
 #SBATCH --mail-type END  ## slurm will email you when your job ends

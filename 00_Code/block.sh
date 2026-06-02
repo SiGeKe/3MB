@@ -10,6 +10,7 @@
 #SBATCH --ntasks=1 ## number of tasks (analyses) to run
 #SBATCH --nodes=1
 #SBATCH --mail-user s_kell14@uni-muenster.de
+#SBATCH --constraint="znver1|znver2|znver4|haswell|broadwell|cascadelake"
 
 #SBATCH --mail-type BEGIN  ## slurm will email you when your job starts
 #SBATCH --mail-type END  ## slurm will email you when your job ends
@@ -28,7 +29,7 @@ nr_steps=$2
 temp=$3
 start=$4
 
-if python MB_Analysis.py --mode IBM --input "./02_PEL/${index}_IS.dat" | grep -q . ; then
+if python MB_Analysis.py --mode IBM_Short --input "./02_PEL/${index}_IS.dat" | grep -q . ; then
     echo "IBM not finished yet."
     exit 1
 fi
